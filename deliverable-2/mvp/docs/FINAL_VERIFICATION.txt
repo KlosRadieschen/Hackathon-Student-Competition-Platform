@@ -1,0 +1,58 @@
+Hackathon Platform D2 MVP — Final Verification
+
+Verification basis
+- Deliverable 1 scope and selected core use cases
+- Instructor feedback on conflict-of-interest, rubric modelling, university needs, logging, and MVP/Release consistency
+- D2 requirement: architecture-consistent working MVP
+
+Automated service tests
+- 12 tests executed
+- 12 passed
+- 0 failed
+
+The suite covers:
+1. Authentication success/failure
+2. Team-size registration rule
+3. One challenge per team
+4. Submission deadline rejection
+5. Active-submission update + artifact preservation + timestamp
+6. Project details hidden until conflict check
+7. Conflict blocks evaluation + reassignment logging + replacement judge access
+8. Organizer rubric editing + 100% weight validation
+9. Rubric locked after judging starts
+10. Complete rubric evaluation + provisional weighted total
+11. Organizer challenge create/edit + deadline audit events
+12. Ranking + publication + participant result/feedback visibility
+
+Live HTTP verification — successful branch
+- Organizer-created challenge accepted
+- Rubric persisted
+- Participant team registration accepted
+- Project submission accepted with timestamp
+- Judge assignment accepted
+- Project content blocked before conflict clearance
+- No-conflict clearance accepted
+- Rubric evaluation stored
+- Provisional ranking became publishable
+- Results published
+- Participant could view rank, score, and feedback
+
+Live HTTP verification — conflict/reassignment branch
+- Judge 1 declared conflict
+- Assignment became inactive
+- Reassignment required was logged
+- Organizer assigned Judge 2
+- Judge 2 completed their own conflict check
+- Judge 2 opened project and rubric
+- Judge 2 evaluation stored
+- Results published
+- Participant could view result
+- Audit contained CONFLICT_DECLARED, JUDGE_REASSIGNMENT_REQUIRED, and RESULTS_PUBLISHED
+
+Frontend compilation
+- TypeScript frontend compiled successfully
+
+Final package state
+- Generated runtime database removed
+- Generated uploaded artifacts removed
+- Compiled browser JavaScript retained so npm start works without TypeScript installation
