@@ -1,5 +1,5 @@
 // Import the API/session helpers used by the judge dashboard.
-import { api, session } from '../api.js';
+import { api, escapeHtml, safeUrl, session } from '../api.js';
 // The judge custom element owns the fairness-first conflict/evaluation workflow.
 export class JudgeView extends HTMLElement {
     // Keep active assignments in component state between render actions.
@@ -13,7 +13,7 @@ export class JudgeView extends HTMLElement {
             this.render();
         }
         catch (error) {
-            this.innerHTML = `<p class="error">${error.message}</p>`;
+            this.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
         }
     }
     // Render assignment identity first; full project details remain hidden until conflict is cleared.
@@ -25,8 +25,8 @@ export class JudgeView extends HTMLElement {
         ${this.assignments.map((assignment) => `
           <article class="card">
             <div class="row spread">
-              <h3>${assignment.teamName}</h3>
-              <span class="badge">${assignment.challengeTitle}</span>
+              <h3>${escapeHtml(assignment.teamName)}</h3>
+              <span class="badge">${escapeHtml(assignment.challengeTitle)}</span>
             </div>
             ${assignment.hasEvaluation ? '<p class="success">Evaluation submitted.</p>' : assignment.conflictChecked ? `
               <p class="success">Conflict check completed: no conflict declared.</p>
@@ -109,16 +109,16 @@ export class JudgeView extends HTMLElement {
         try {
             const data = await api(`/api/submissions/${submissionId}/evaluation-data`);
             panel.innerHTML = `<form id="evaluation-form" class="card stack evaluation">
-        <h3>Evaluate ${data.submission.teamName}</h3>
-        <p><strong>${data.submission.challengeTitle}</strong></p>
-        <p>${data.submission.description || 'No project description provided.'}</p>
-        ${data.submission.repositoryLink ? `<p><a href="${data.submission.repositoryLink}" target="_blank" rel="noreferrer">Open repository</a></p>` : '<p class="muted">No repository link provided.</p>'}
-        ${data.submission.artifactName ? `<p><a href="#" data-artifact="${submissionId}">Download ${data.submission.artifactName}</a></p>` : ''}
+        <h3>Evaluate ${escapeHtml(data.submission.teamName)}</h3>
+        <p><strong>${escapeHtml(data.submission.challengeTitle)}</strong></p>
+        <p>${escapeHtml(data.submission.description || 'No project description provided.')}</p>
+        ${data.submission.repositoryLink ? `<p><a href="${escapeHtml(safeUrl(data.submission.repositoryLink))}" target="_blank" rel="noreferrer">Open repository</a></p>` : '<p class="muted">No repository link provided.</p>'}
+        ${data.submission.artifactName ? `<p><a href="#" data-artifact="${submissionId}">Download ${escapeHtml(data.submission.artifactName)}</a></p>` : ''}
         <p class="muted">D2 MVP scoring: the organizer-defined weights produce a provisional weighted total. Final ranking/normalization is outside this MVP.</p>
         ${data.criteria.map((criterion) => `
           <fieldset>
-            <legend>${criterion.name} <span class="muted">(${Math.round(criterion.weight * 100)}%, max ${criterion.maxScore})</span></legend>
-            <p class="muted">${criterion.description}</p>
+            <legend>${escapeHtml(criterion.name)} <span class="muted">(${Math.round(criterion.weight * 100)}%, max ${criterion.maxScore})</span></legend>
+            <p class="muted">${escapeHtml(criterion.description)}</p>
             <label>Score<input name="score-${criterion.id}" type="number" min="0" max="${criterion.maxScore}" step="0.1" required></label>
             <label>Criterion comment<input name="comment-${criterion.id}"></label>
           </fieldset>
@@ -157,7 +157,7 @@ export class JudgeView extends HTMLElement {
             });
         }
         catch (error) {
-            panel.innerHTML = `<p class="error">${error.message}</p>`;
+            panel.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
         }
     }
 }

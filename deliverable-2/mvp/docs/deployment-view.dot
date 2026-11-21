@@ -1,0 +1,20 @@
+// Deployment view. Render: dot -Tpng deployment-view.dot -o deployment-view.png
+digraph DeploymentView {
+  rankdir=LR;
+  graph [bgcolor="white", pad="0.2", nodesep="0.4", ranksep="0.8"];
+  node [shape=box3d, fontname="Arial", fontsize=11, margin="0.15,0.08"];
+  edge [fontname="Arial", fontsize=9];
+
+  Device [label="User device\nWeb browser\n(desktop or mobile)"];
+  Host [label="Application host\nNode.js 22\nModular monolith"];
+  Storage [label="Persistent storage\nSQLite database file (WAL)"];
+  Artifacts [label="Artifact directory\nscanned uploads"];
+  Backups [label="Backup directory\ndaily database + artifact copies"];
+  ClamAV [label="ClamAV (optional)\nclamd / clamscan", style=dashed];
+
+  Device -> Host [label="HTTPS in deployment\nHTTP in local MVP"];
+  Host -> Storage [label="node:sqlite"];
+  Host -> Artifacts [label="filesystem"];
+  Host -> Backups [label="scheduled backup"];
+  Host -> ClamAV [label="scan uploads", style=dashed];
+}

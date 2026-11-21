@@ -30,6 +30,8 @@ export function createOrganizerService(challenges, submissions, users, evaluatio
     const rules = String(raw.rules || '').trim();
     const minTeamSize = Number(raw.minTeamSize);
     const maxTeamSize = Number(raw.maxTeamSize);
+    // Blank capacity means unlimited teams.
+    const maxTeams = raw.maxTeams === undefined || raw.maxTeams === null || raw.maxTeams === '' ? null : Number(raw.maxTeams);
     const registrationDeadline = new Date(String(raw.registrationDeadline || ''));
     const submissionDeadline = new Date(String(raw.submissionDeadline || ''));
 
@@ -44,6 +46,9 @@ export function createOrganizerService(challenges, submissions, users, evaluatio
     }
     if (!Number.isInteger(minTeamSize) || !Number.isInteger(maxTeamSize) || minTeamSize < 1 || maxTeamSize < minTeamSize || maxTeamSize > 20) {
       throw Object.assign(new Error('Team-size limits are invalid'), { status: 400, code: 'INVALID_TEAM_SIZE_LIMITS' });
+    }
+    if (maxTeams !== null && (!Number.isInteger(maxTeams) || maxTeams < 1 || maxTeams > 1000)) {
+      throw Object.assign(new Error('Maximum number of teams must be a whole number from 1 to 1000, or blank for unlimited'), { status: 400, code: 'INVALID_CAPACITY' });
     }
     if (Number.isNaN(registrationDeadline.getTime()) || Number.isNaN(submissionDeadline.getTime())) {
       throw Object.assign(new Error('Both deadlines must be valid dates'), { status: 400, code: 'INVALID_DEADLINE' });
@@ -64,6 +69,7 @@ export function createOrganizerService(challenges, submissions, users, evaluatio
       rules,
       minTeamSize,
       maxTeamSize,
+      maxTeams,
       registrationDeadline: registrationDeadline.toISOString(),
       submissionDeadline: submissionDeadline.toISOString()
     };
@@ -123,10 +129,12 @@ export function createOrganizerService(challenges, submissions, users, evaluatio
         rules: challenge.rules,
         minTeamSize: challenge.min_team_size,
         maxTeamSize: challenge.max_team_size,
+        maxTeams: challenge.max_teams,
         registrationDeadline: challenge.registration_deadline,
         submissionDeadline: challenge.submission_deadline,
         status: challenge.status,
-        publishedAt: challenge.published_at
+        publishedAt: challenge.published_at,
+        registrations: challenges.registrationList(challenge.id)
       }));
     },
 
@@ -150,6 +158,24 @@ export function createOrganizerService(challenges, submissions, users, evaluatio
       }
 
       const input = validateChallenge(raw);
+
+      // New team-size limits must not silently invalidate teams that registered under the old ones.
+      const registered = challenges.registrationList(challengeId);
+      const outside = registered.filter((team) => team.size < input.minTeamSize || team.size > input.maxTeamSize);
+      if (outside.length) {
+        throw Object.assign(
+          new Error(`New team-size limits would exclude registered teams: ${outside.map((team) => `${team.teamName} (${team.size})`).join(', ')}`),
+          { status: 409, code: 'TEAM_SIZE_CONFLICT' }
+        );
+      }
+
+      if (input.maxTeams !== null && registered.length > input.maxTeams) {
+        throw Object.assign(
+          new Error(`${registered.length} teams are already registered, so the maximum cannot be lower than that`),
+          { status: 409, code: 'CAPACITY_CONFLICT' }
+        );
+      }
+
       challenges.update(challengeId, input);
       audit.add(userId, 'CHALLENGE_UPDATED', 'challenge', challengeId, input);
 
@@ -247,6 +273,11 @@ export function createOrganizerService(challenges, submissions, users, evaluatio
       const judge = users.findById(judgeId);
       if (!judge || judge.role !== 'judge') {
         throw Object.assign(new Error('Judge not found'), { status: 404, code: 'JUDGE_NOT_FOUND' });
+      }
+
+      // A judge who declared a conflict for this project cannot be put back on it.
+      if (evaluations.conflict(judgeId, submissionId)) {
+        throw Object.assign(new Error('This judge declared a conflict of interest for this project; choose another judge'), { status: 409, code: 'JUDGE_HAS_CONFLICT' });
       }
 
       evaluations.assignJudge(judgeId, submissionId, new Date().toISOString());

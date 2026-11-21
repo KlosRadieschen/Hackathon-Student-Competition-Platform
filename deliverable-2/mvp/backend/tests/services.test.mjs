@@ -2,6 +2,9 @@
 import test from 'node:test';
 // Use strict assertions so accidental type/coercion differences are visible.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 // Import the real database/schema code; tests use an in-memory database.
 import { openDatabase } from '../storage/database.mjs';
 // Import the same seed data used by the running MVP.
@@ -23,6 +26,8 @@ import { createOrganizerService } from '../services/organizerService.mjs';
 import { createEvaluationService } from '../services/evaluationService.mjs';
 import { createAuthService } from '../services/authService.mjs';
 import { createResultService } from '../services/resultService.mjs';
+import { createBackupService } from '../services/backupService.mjs';
+import { createAdminService } from '../services/adminService.mjs';
 
 // Build one fully wired in-memory application fixture per test.
 function fixture() {
@@ -40,6 +45,10 @@ function fixture() {
   const evaluations = createEvaluationRepository(db);
   const audit = createAuditRepository(db);
   const results = createResultRepository(db);
+  // Backups go to a throwaway directory so tests never touch the real backups folder.
+  const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hackathon-backups-'));
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hackathon-uploads-'));
+  const backups = createBackupService(db, audit, { backupDir, uploadDir, keep: 2 });
 
   // Return repositories plus fully wired services to each test.
   return {
@@ -52,13 +61,17 @@ function fixture() {
     evaluations,
     audit,
     results,
+    backups,
+    backupDir,
+    uploadDir,
     auth:createAuthService(users,audit),
-    team:createTeamService(teams,audit),
-    registration:createRegistrationService(challenges,teams,registrations,audit),
+    team:createTeamService(teams,audit,registrations,challenges),
+    registration:createRegistrationService(challenges,teams,registrations,audit,submissions),
     submission:createSubmissionService(challenges,teams,registrations,submissions,audit),
     organizer:createOrganizerService(challenges,submissions,users,evaluations,results,audit),
     evaluation:createEvaluationService(challenges,submissions,evaluations,audit),
-    result:createResultService(challenges,teams,results)
+    result:createResultService(challenges,teams,results),
+    admin:createAdminService(users,teams,audit,backups)
   };
 }
 
@@ -366,5 +379,327 @@ test('evaluated submissions can be ranked, published, and viewed by the particip
   assert.equal(visible[0].position,1);
   assert.equal(visible[0].provisionalScore,100);
   assert.equal(visible[0].feedback[0].feedback,'Strong project with a complete implementation.');
+  f.db.close();
+});
+
+// Create an extra participant account through the real sign-up flow.
+function signUp(f,email){ return f.auth.register('Extra Participant',email,'Passw0rd!').user.id; }
+
+// FR1: users can create their own participant account; weak or duplicate sign-ups are refused.
+test('sign-up creates a participant account and rejects duplicates and weak passwords',()=>{
+  const f=fixture();
+  const created=f.auth.register('New Student','new@example.com','Secret123');
+  assert.equal(created.user.role,'participant');
+  assert.ok(created.token);
+  assert.equal(f.auth.login('new@example.com','Secret123').user.id,created.user.id);
+  assert.throws(()=>f.auth.register('Again','NEW@example.com','Secret123'),error=>error.code==='EMAIL_TAKEN');
+  assert.throws(()=>f.auth.register('Weak','weak@example.com','short'),error=>error.code==='WEAK_PASSWORD');
+  assert.throws(()=>f.auth.register('Bad','not-an-email','Secret123'),error=>error.code==='INVALID_EMAIL');
+  f.db.close();
+});
+
+// A registered team must stay within its challenge's maximum size, and membership locks once judging starts.
+test('joining a registered team respects the maximum size and locks after judging starts',()=>{
+  const f=fixture();
+  const owner=participantId(f);
+  f.db.prepare('UPDATE challenges SET max_team_size=2 WHERE id=1').run();
+  const team=f.team.createTeam(owner,'Full Team');
+  f.team.joinTeam(f.users.findByEmail('participant2@example.com').id,team.inviteCode);
+  f.registration.register(owner,1);
+
+  const third=signUp(f,'third@example.com');
+  assert.throws(()=>f.team.joinTeam(third,team.inviteCode),error=>error.code==='TEAM_FULL');
+  assert.equal(f.teams.size(team.id),2);
+
+  f.db.prepare('UPDATE challenges SET max_team_size=4 WHERE id=1').run();
+  f.organizer.startJudging(organizerId(f),1);
+  assert.throws(()=>f.team.joinTeam(third,team.inviteCode),error=>error.code==='TEAM_LOCKED');
+  f.db.close();
+});
+
+// FR5: participants can leave a team; ownership moves on, empty teams disappear, registered minimums hold.
+test('leaving a team transfers ownership, deletes empty teams, and respects the registered minimum',()=>{
+  const f=fixture();
+  const owner=participantId(f);
+  const second=f.users.findByEmail('participant2@example.com').id;
+  const team=f.team.createTeam(owner,'Leaving Team');
+  f.team.joinTeam(second,team.inviteCode);
+
+  const left=f.team.leaveTeam(owner);
+  assert.equal(left.teamDeleted,false);
+  assert.equal(left.ownerUserId,Number(second));
+  assert.equal(f.team.getMyTeam(owner),null);
+
+  f.db.prepare('UPDATE challenges SET min_team_size=1 WHERE id=1').run();
+  f.registration.register(second,1);
+  assert.throws(()=>f.team.leaveTeam(second),error=>error.code==='TEAM_SIZE_INVALID');
+
+  const solo=f.team.createTeam(owner,'Solo Team');
+  assert.equal(f.team.leaveTeam(owner).teamDeleted,true);
+  assert.equal(f.teams.findByInviteCode(solo.inviteCode),null);
+  assert.ok(f.audit.list(20).some((event)=>event.eventType==='TEAM_LEFT'));
+  f.db.close();
+});
+
+// Organizers cannot change team-size limits in a way that silently invalidates registered teams.
+test('organizer cannot set team-size limits that exclude a registered team',()=>{
+  const f=fixture();
+  const owner=participantId(f);
+  const team=f.team.createTeam(owner,'Pair Team');
+  f.team.joinTeam(f.users.findByEmail('participant2@example.com').id,team.inviteCode);
+  f.registration.register(owner,1);
+  const challenge=f.challenges.findById(1);
+  assert.throws(()=>f.organizer.updateChallenge(organizerId(f),1,{
+    title:challenge.title,
+    description:challenge.description,
+    rules:challenge.rules,
+    minTeamSize:1,
+    maxTeamSize:1,
+    registrationDeadline:challenge.registration_deadline,
+    submissionDeadline:challenge.submission_deadline
+  }),error=>error.code==='TEAM_SIZE_CONFLICT');
+  f.db.close();
+});
+
+// UC1 required fields: a description plus a link or file; failed attempts are logged for the admin.
+test('empty submissions are rejected and every failed attempt is logged',()=>{
+  const f=fixture();
+  const participant=participantId(f);
+  f.team.createTeam(participant,'Empty Team');
+  const registration=f.registration.register(participant,1);
+
+  assert.throws(()=>f.submission.submit(participant,registration.registrationId,{}),error=>error.code==='SUBMISSION_DESCRIPTION_REQUIRED');
+  assert.throws(
+    ()=>f.submission.submit(participant,registration.registrationId,{description:'Only a description'}),
+    error=>error.code==='SUBMISSION_CONTENT_REQUIRED'
+  );
+  assert.throws(
+    ()=>f.submission.submit(participant,registration.registrationId,{
+      description:'Wrong file type',
+      artifact:{name:'tool.exe',dataBase64:Buffer.from('x').toString('base64')}
+    }),
+    error=>error.code==='INVALID_FILE_TYPE'
+  );
+
+  const failures=f.admin.uploadErrors();
+  assert.deepEqual(failures.map((event)=>event.details.code),['INVALID_FILE_TYPE','SUBMISSION_CONTENT_REQUIRED','SUBMISSION_DESCRIPTION_REQUIRED']);
+  assert.equal(failures[0].details.artifactName,'tool.exe');
+  assert.equal(failures[0].userEmail,'participant@example.com');
+  f.db.close();
+});
+
+// NFR1: uploads are scanned for malware signatures and for content that does not match the extension.
+test('upload scanning rejects malware test files and disguised content',()=>{
+  const f=fixture();
+  const participant=participantId(f);
+  f.team.createTeam(participant,'Scan Team');
+  const registration=f.registration.register(participant,1);
+  const upload=(name,content)=>()=>f.submission.submit(participant,registration.registrationId,{
+    description:'Scanned upload',
+    artifact:{name,dataBase64:Buffer.from(content).toString('base64')}
+  });
+
+  const eicar=['X5O!P%@AP[4\\PZX54(P^)7CC)7}$','EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'].join('');
+  assert.throws(upload('readme.txt',eicar),error=>error.code==='MALWARE_DETECTED');
+  assert.throws(upload('report.pdf',Buffer.from([0x4d,0x5a,0x90,0x00])),error=>error.code==='FILE_CONTENT_MISMATCH');
+  assert.throws(upload('notes.md',Buffer.from([0x7f,0x45,0x4c,0x46,0x00])),error=>error.code==='FILE_CONTENT_MISMATCH');
+  assert.equal(f.submissions.findByRegistration(registration.registrationId),null);
+  f.db.close();
+});
+
+// Admin story 1: change roles and reset accounts to fix access problems.
+test('admin can change roles and reset an account but not change their own role',()=>{
+  const f=fixture();
+  const admin=f.users.findByEmail('admin@example.com').id;
+  const target=signUp(f,'promote@example.com');
+
+  assert.equal(f.admin.changeRole(admin,target,'judge').user.role,'judge');
+  assert.throws(()=>f.admin.changeRole(admin,admin,'participant'),error=>error.code==='CANNOT_CHANGE_OWN_ROLE');
+  assert.throws(()=>f.admin.changeRole(admin,target,'superuser'),error=>error.code==='INVALID_ROLE');
+
+  const inTeam=participantId(f);
+  f.team.createTeam(inTeam,'Team Player');
+  assert.throws(()=>f.admin.changeRole(admin,inTeam,'judge'),error=>error.code==='USER_IN_TEAM');
+
+  const reset=f.admin.resetAccount(admin,target);
+  assert.throws(()=>f.auth.login('promote@example.com','Passw0rd!'),error=>error.code==='INVALID_CREDENTIALS');
+  assert.equal(f.auth.login('promote@example.com',reset.temporaryPassword).user.id,target);
+
+  const events=f.audit.list(20).map((event)=>event.eventType);
+  assert.ok(events.includes('ROLE_CHANGED'));
+  assert.ok(events.includes('ACCOUNT_RESET'));
+  f.db.close();
+});
+
+// Admin story 3 / NFR3: backups copy the database and artifacts, and old backups are pruned.
+test('backups copy the database and uploaded artifacts and keep only the newest ones',async ()=>{
+  const f=fixture();
+  fs.writeFileSync(path.join(f.uploadDir,'1-artifact.txt'),'artifact');
+
+  const first=f.backups.create('manual');
+  assert.equal(first.artifactCount,1);
+  assert.ok(fs.existsSync(path.join(f.backupDir,first.name,'hackathon.db')));
+  assert.ok(fs.existsSync(path.join(f.backupDir,first.name,'uploads','1-artifact.txt')));
+
+  // Restoring the copy must give back the same accounts.
+  const copy=openDatabase(path.join(f.backupDir,first.name,'hackathon.db'));
+  assert.equal(copy.prepare('SELECT COUNT(*) AS n FROM users').get().n,6);
+  copy.close();
+
+  for(let i=0;i<2;i++){ await new Promise((resolve)=>setTimeout(resolve,5)); f.backups.create('scheduled'); }
+  const listed=f.backups.list();
+  assert.equal(listed.length,2);
+  assert.ok(!listed.some((backup)=>backup.name===first.name));
+  assert.ok(f.audit.list(20).some((event)=>event.eventType==='BACKUP_CREATED'));
+  f.db.close();
+  fs.rmSync(f.backupDir,{recursive:true,force:true});
+  fs.rmSync(f.uploadDir,{recursive:true,force:true});
+});
+
+// XSS hardening: HTML-bearing repository links and sign-up emails are refused, and the stored artifact type comes from the extension.
+test('submission and sign-up reject HTML payloads and artifact type is set by the server',()=>{
+  const f=fixture();
+  const participant=participantId(f);
+  f.team.createTeam(participant,'Safe Team');
+  const registration=f.registration.register(participant,1);
+
+  for(const repositoryLink of ['https://x.co" onmouseover="alert(1)','javascript:alert(1)','https://x.co/<script>']){
+    assert.throws(
+      ()=>f.submission.submit(participant,registration.registrationId,{repositoryLink,description:'Payload link'}),
+      error=>error.code==='INVALID_REPOSITORY_LINK'
+    );
+  }
+  assert.throws(()=>f.auth.register('Mallory','<img/src/onerror=alert(1)>@x.co','Passw0rd!'),error=>error.code==='INVALID_EMAIL');
+
+  f.submission.submit(participant,registration.registrationId,{
+    repositoryLink:'https://github.com/example/safe',
+    description:'Typed upload',
+    artifact:{name:'notes.txt',type:'text/html',dataBase64:Buffer.from('plain notes').toString('base64')}
+  });
+  assert.equal(f.submissions.findByRegistration(registration.registrationId).artifact_mime,'text/plain');
+  f.db.close();
+});
+
+// UC2 step 3: a full challenge refuses further registrations, and capacity cannot drop below current registrations.
+test('challenge capacity refuses registration when full and cannot be set below current registrations',()=>{
+  const f=fixture();
+  const organizer=organizerId(f);
+  f.db.prepare('UPDATE challenges SET max_teams=1 WHERE id=1').run();
+  f.team.createTeam(participantId(f),'First Team');
+  f.registration.register(participantId(f),1);
+
+  const second=f.users.findByEmail('participant2@example.com').id;
+  f.team.createTeam(second,'Second Team');
+  assert.throws(()=>f.registration.register(second,1),error=>error.code==='CHALLENGE_FULL');
+
+  const challenge=f.challenges.findById(1);
+  const edit=(maxTeams)=>f.organizer.updateChallenge(organizer,1,{
+    title:challenge.title,description:challenge.description,rules:challenge.rules,
+    minTeamSize:challenge.min_team_size,maxTeamSize:challenge.max_team_size,maxTeams,
+    registrationDeadline:challenge.registration_deadline,submissionDeadline:challenge.submission_deadline
+  });
+  edit('');
+  assert.equal(f.challenges.findById(1).max_teams,null);
+  f.registration.register(second,1);
+  assert.throws(()=>edit(1),error=>error.code==='CAPACITY_CONFLICT');
+  assert.throws(()=>edit(0),error=>error.code==='INVALID_CAPACITY');
+  f.db.close();
+});
+
+// UC2 step 5: registered teams appear in the organizer's registration list.
+test('registered teams appear in the organizer registration list',()=>{
+  const f=fixture();
+  const participant=participantId(f);
+  f.team.createTeam(participant,'Listed Team');
+  const registration=f.registration.register(participant,1);
+  f.submission.submit(participant,registration.registrationId,{repositoryLink:'https://github.com/example/listed',description:'Listed project'});
+
+  const listed=f.organizer.listChallenges(organizerId(f)).find((challenge)=>challenge.id===1).registrations;
+  assert.equal(listed.length,1);
+  assert.equal(listed[0].teamName,'Listed Team');
+  assert.equal(listed[0].size,1);
+  assert.ok(listed[0].submittedAt);
+  f.db.close();
+});
+
+// UC3 extension 2a: after a conflict the organizer sees the project needs a new judge, and cannot reassign the same judge.
+test('conflicted submissions are flagged for reassignment and the conflicted judge cannot be reassigned',()=>{
+  const f=fixture();
+  const submissionId=setupSubmitted(f);
+  const organizer=organizerId(f);
+  const flag=()=>f.organizer.listSubmissions(organizer).find((item)=>item.submissionId===submissionId);
+
+  assert.equal(flag().needsReassignment,0);
+  f.evaluation.declareConflict(judgeId(f),submissionId,'Former teammate');
+  assert.equal(flag().needsReassignment,1);
+  assert.equal(flag().conflictJudges,'judge@example.com');
+
+  assert.throws(()=>f.organizer.assignJudge(organizer,submissionId,judgeId(f)),error=>error.code==='JUDGE_HAS_CONFLICT');
+  f.organizer.assignJudge(organizer,submissionId,secondJudgeId(f));
+  assert.equal(flag().needsReassignment,0);
+  f.db.close();
+});
+
+// UC1 extension 4a: the new version replaces the active one and the previous one is kept in history.
+test('updating a submission keeps the previous version and its file in history',()=>{
+  const f=fixture();
+  const participant=participantId(f);
+  f.team.createTeam(participant,'History Team');
+  const registration=f.registration.register(participant,1);
+
+  const first=f.submission.submit(participant,registration.registrationId,{
+    repositoryLink:'https://github.com/example/v1',
+    description:'Version one',
+    artifact:{name:'v1.txt',dataBase64:Buffer.from('first file').toString('base64')}
+  });
+  assert.equal(first.version,1);
+  const firstPath=f.submissions.findByRegistration(registration.registrationId).artifact_path;
+
+  const second=f.submission.submit(participant,registration.registrationId,{
+    repositoryLink:'https://github.com/example/v2',
+    description:'Version two',
+    artifact:{name:'v2.txt',dataBase64:Buffer.from('second file').toString('base64')}
+  });
+  assert.equal(second.version,2);
+  assert.equal(second.submissionId,first.submissionId);
+
+  const active=f.submissions.findByRegistration(registration.registrationId);
+  assert.equal(active.description,'Version two');
+  const history=f.registration.listMine(participant)[0].previousVersions;
+  assert.equal(history.length,1);
+  assert.equal(history[0].version,1);
+  assert.equal(history[0].description,'Version one');
+  assert.equal(history[0].artifactName,'v1.txt');
+  assert.ok(fs.existsSync(firstPath));
+  f.db.close();
+});
+
+// UC1 extensions 3a/3b: errors show the deadline time and name the file that failed.
+test('submission errors show the deadline and name the failing file',()=>{
+  const f=fixture();
+  const participant=participantId(f);
+  f.team.createTeam(participant,'Message Team');
+  const registration=f.registration.register(participant,1);
+
+  assert.throws(
+    ()=>f.submission.submit(participant,registration.registrationId,{
+      description:'Too big',
+      artifact:{name:'huge.zip',dataBase64:Buffer.alloc(1024*1024+1).toString('base64')}
+    }),
+    error=>error.code==='FILE_TOO_LARGE' && error.message.includes('huge.zip')
+  );
+  assert.throws(
+    ()=>f.submission.submit(participant,registration.registrationId,{
+      description:'Fake pdf',
+      artifact:{name:'slides.pdf',dataBase64:Buffer.from('not a pdf').toString('base64')}
+    }),
+    error=>error.code==='FILE_CONTENT_MISMATCH' && error.message.startsWith('slides.pdf')
+  );
+
+  f.db.prepare("UPDATE challenges SET submission_deadline='2020-01-01T00:00:00.000Z' WHERE id=1").run();
+  assert.throws(
+    ()=>f.submission.submit(participant,registration.registrationId,{repositoryLink:'https://example.com',description:'Late'}),
+    error=>error.code==='SUBMISSION_CLOSED' && error.message.includes('2020')
+  );
   f.db.close();
 });

@@ -15,7 +15,7 @@ export function createRegistrationRepository(db) {
       return db.prepare(`
         SELECT r.id,r.team_id AS teamId,r.challenge_id AS challengeId,r.registered_at AS registeredAt,r.status,
                c.title,c.submission_deadline AS submissionDeadline,c.status AS challengeStatus,
-               s.id AS submissionId,s.repository_link AS repositoryLink,s.description AS submissionDescription,s.artifact_name AS artifactName,s.submitted_at AS submittedAt
+               s.id AS submissionId,s.version AS submissionVersion,s.repository_link AS repositoryLink,s.description AS submissionDescription,s.artifact_name AS artifactName,s.submitted_at AS submittedAt
         FROM registrations r
         JOIN challenges c ON c.id=r.challenge_id
         LEFT JOIN submissions s ON s.registration_id=r.id

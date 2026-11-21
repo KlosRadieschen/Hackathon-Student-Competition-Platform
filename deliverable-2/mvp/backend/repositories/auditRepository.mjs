@@ -12,6 +12,15 @@ export function createAuditRepository(db) {
         FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id
         ORDER BY a.id DESC LIMIT ?
       `).all(limit).map((row) => ({ ...row, details: JSON.parse(row.detailsJson || '{}') }));
+    },
+    listByType(eventType, limit = 100) {
+      return db.prepare(`
+        SELECT a.id,a.event_type AS eventType,a.entity_type AS entityType,a.entity_id AS entityId,a.details_json AS detailsJson,a.created_at AS createdAt,
+               u.email AS userEmail
+        FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id
+        WHERE a.event_type=?
+        ORDER BY a.id DESC LIMIT ?
+      `).all(eventType, limit).map((row) => ({ ...row, details: JSON.parse(row.detailsJson || '{}') }));
     }
   };
 }

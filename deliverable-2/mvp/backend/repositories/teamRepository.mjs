@@ -27,6 +27,24 @@ export function createTeamRepository(db) {
     },
     size(teamId) {
       return Number(db.prepare(`SELECT COUNT(*) AS n FROM team_members WHERE team_id=?`).get(teamId)?.n || 0);
+    },
+    // Remove one member; ownership passes to the longest-standing remaining member, and an empty team is deleted.
+    removeMember(teamId, userId) {
+      db.exec('BEGIN');
+      try {
+        db.prepare(`DELETE FROM team_members WHERE team_id=? AND user_id=?`).run(teamId, userId);
+        const next = db.prepare(`SELECT user_id AS userId FROM team_members WHERE team_id=? ORDER BY rowid LIMIT 1`).get(teamId);
+        let outcome;
+        if (!next) {
+          db.prepare(`DELETE FROM teams WHERE id=?`).run(teamId);
+          outcome = { teamDeleted: true, ownerUserId: null };
+        } else {
+          db.prepare(`UPDATE teams SET owner_user_id=? WHERE id=? AND owner_user_id=?`).run(next.userId, teamId, userId);
+          outcome = { teamDeleted: false, ownerUserId: Number(db.prepare(`SELECT owner_user_id AS id FROM teams WHERE id=?`).get(teamId).id) };
+        }
+        db.exec('COMMIT');
+        return outcome;
+      } catch (error) { db.exec('ROLLBACK'); throw error; }
     }
   };
 }

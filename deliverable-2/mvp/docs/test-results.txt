@@ -3,84 +3,180 @@
 > node --no-warnings --test backend/tests/*.test.mjs
 
 TAP version 13
-# Subtest: authentication accepts seeded credentials and rejects wrong password
-ok 1 - authentication accepts seeded credentials and rejects wrong password
+# Subtest: escapeHtml turns script payloads into inert text
+ok 1 - escapeHtml turns script payloads into inert text
   ---
-  duration_ms: 342.061689
+  duration_ms: 1.864979
+  type: 'test'
+  ...
+# Subtest: safeUrl allows only http(s) links
+ok 2 - safeUrl allows only http(s) links
+  ---
+  duration_ms: 0.534559
+  type: 'test'
+  ...
+# Subtest: authentication accepts seeded credentials and rejects wrong password
+ok 3 - authentication accepts seeded credentials and rejects wrong password
+  ---
+  duration_ms: 558.767862
   type: 'test'
   ...
 # Subtest: registration enforces configured team size
-ok 2 - registration enforces configured team size
+ok 4 - registration enforces configured team size
   ---
-  duration_ms: 208.174409
+  duration_ms: 357.747916
   type: 'test'
   ...
 # Subtest: a team can register for only one challenge in the MVP
-ok 3 - a team can register for only one challenge in the MVP
+ok 5 - a team can register for only one challenge in the MVP
   ---
-  duration_ms: 207.976977
+  duration_ms: 339.629204
   type: 'test'
   ...
 # Subtest: submission is rejected after the deadline
-ok 4 - submission is rejected after the deadline
+ok 6 - submission is rejected after the deadline
   ---
-  duration_ms: 209.156432
+  duration_ms: 344.271347
   type: 'test'
   ...
 # Subtest: updating the active submission preserves the existing artifact unless a new file replaces it
-ok 5 - updating the active submission preserves the existing artifact unless a new file replaces it
+ok 7 - updating the active submission preserves the existing artifact unless a new file replaces it
   ---
-  duration_ms: 213.721377
+  duration_ms: 362.624586
   type: 'test'
   ...
 # Subtest: project details remain hidden until the judge completes the conflict check
-ok 6 - project details remain hidden until the judge completes the conflict check
+ok 8 - project details remain hidden until the judge completes the conflict check
   ---
-  duration_ms: 224.947386
+  duration_ms: 386.810473
   type: 'test'
   ...
 # Subtest: declared conflict blocks evaluation and records reassignment requirement
-ok 7 - declared conflict blocks evaluation and records reassignment requirement
+ok 9 - declared conflict blocks evaluation and records reassignment requirement
   ---
-  duration_ms: 215.685167
+  duration_ms: 343.095287
   type: 'test'
   ...
 # Subtest: organizer can edit the rubric before judging and weights must total 100 percent
-ok 8 - organizer can edit the rubric before judging and weights must total 100 percent
+ok 10 - organizer can edit the rubric before judging and weights must total 100 percent
   ---
-  duration_ms: 215.988383
+  duration_ms: 316.708537
   type: 'test'
   ...
 # Subtest: rubric editing is locked after judging starts
-ok 9 - rubric editing is locked after judging starts
+ok 11 - rubric editing is locked after judging starts
   ---
-  duration_ms: 211.43929
+  duration_ms: 336.414093
   type: 'test'
   ...
 # Subtest: complete rubric evaluation calculates the provisional weighted total
-ok 10 - complete rubric evaluation calculates the provisional weighted total
+ok 12 - complete rubric evaluation calculates the provisional weighted total
   ---
-  duration_ms: 269.581424
+  duration_ms: 328.923534
   type: 'test'
   ...
 # Subtest: organizer can create and edit an open challenge and deadline changes are audited
-ok 11 - organizer can create and edit an open challenge and deadline changes are audited
+ok 13 - organizer can create and edit an open challenge and deadline changes are audited
   ---
-  duration_ms: 222.342993
+  duration_ms: 315.100681
   type: 'test'
   ...
 # Subtest: evaluated submissions can be ranked, published, and viewed by the participant
-ok 12 - evaluated submissions can be ranked, published, and viewed by the participant
+ok 14 - evaluated submissions can be ranked, published, and viewed by the participant
   ---
-  duration_ms: 232.168635
+  duration_ms: 323.895967
   type: 'test'
   ...
-1..12
-# tests 12
+# Subtest: sign-up creates a participant account and rejects duplicates and weak passwords
+ok 15 - sign-up creates a participant account and rejects duplicates and weak passwords
+  ---
+  duration_ms: 434.074531
+  type: 'test'
+  ...
+# Subtest: joining a registered team respects the maximum size and locks after judging starts
+ok 16 - joining a registered team respects the maximum size and locks after judging starts
+  ---
+  duration_ms: 412.524199
+  type: 'test'
+  ...
+# Subtest: leaving a team transfers ownership, deletes empty teams, and respects the registered minimum
+ok 17 - leaving a team transfers ownership, deletes empty teams, and respects the registered minimum
+  ---
+  duration_ms: 350.860352
+  type: 'test'
+  ...
+# Subtest: organizer cannot set team-size limits that exclude a registered team
+ok 18 - organizer cannot set team-size limits that exclude a registered team
+  ---
+  duration_ms: 322.447776
+  type: 'test'
+  ...
+# Subtest: empty submissions are rejected and every failed attempt is logged
+ok 19 - empty submissions are rejected and every failed attempt is logged
+  ---
+  duration_ms: 316.694536
+  type: 'test'
+  ...
+# Subtest: upload scanning rejects malware test files and disguised content
+ok 20 - upload scanning rejects malware test files and disguised content
+  ---
+  duration_ms: 340.136455
+  type: 'test'
+  ...
+# Subtest: admin can change roles and reset an account but not change their own role
+ok 21 - admin can change roles and reset an account but not change their own role
+  ---
+  duration_ms: 529.340035
+  type: 'test'
+  ...
+# Subtest: backups copy the database and uploaded artifacts and keep only the newest ones
+ok 22 - backups copy the database and uploaded artifacts and keep only the newest ones
+  ---
+  duration_ms: 394.960546
+  type: 'test'
+  ...
+# Subtest: submission and sign-up reject HTML payloads and artifact type is set by the server
+ok 23 - submission and sign-up reject HTML payloads and artifact type is set by the server
+  ---
+  duration_ms: 323.956774
+  type: 'test'
+  ...
+# Subtest: challenge capacity refuses registration when full and cannot be set below current registrations
+ok 24 - challenge capacity refuses registration when full and cannot be set below current registrations
+  ---
+  duration_ms: 330.132394
+  type: 'test'
+  ...
+# Subtest: registered teams appear in the organizer registration list
+ok 25 - registered teams appear in the organizer registration list
+  ---
+  duration_ms: 306.32217
+  type: 'test'
+  ...
+# Subtest: conflicted submissions are flagged for reassignment and the conflicted judge cannot be reassigned
+ok 26 - conflicted submissions are flagged for reassignment and the conflicted judge cannot be reassigned
+  ---
+  duration_ms: 333.125051
+  type: 'test'
+  ...
+# Subtest: updating a submission keeps the previous version and its file in history
+ok 27 - updating a submission keeps the previous version and its file in history
+  ---
+  duration_ms: 317.847163
+  type: 'test'
+  ...
+# Subtest: submission errors show the deadline and name the failing file
+ok 28 - submission errors show the deadline and name the failing file
+  ---
+  duration_ms: 330.518254
+  type: 'test'
+  ...
+1..28
+# tests 28
 # suites 0
-# pass 12
+# pass 28
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 2848.003729
+# duration_ms 9519.570274

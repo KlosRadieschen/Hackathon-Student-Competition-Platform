@@ -19,6 +19,19 @@ export async function api<T>(path:string, options:RequestInit = {}):Promise<T> {
   return body as T;
 }
 
+// Escape user-supplied text before inserting it into HTML templates.
+export function escapeHtml(value:unknown):string {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' } as Record<string,string>)[c]);
+}
+
+// Allow only absolute http(s) links in href attributes; anything else (e.g. javascript:) becomes '#'.
+export function safeUrl(value:unknown):string {
+  try {
+    const url=new URL(String(value ?? ''));
+    return url.protocol==='http:' || url.protocol==='https:' ? url.href : '#';
+  } catch { return '#'; }
+}
+
 export async function fileToBase64(file:File):Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = '';

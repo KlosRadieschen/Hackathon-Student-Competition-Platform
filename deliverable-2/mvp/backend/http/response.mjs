@@ -1,7 +1,16 @@
 // Small helpers for reading JSON requests and sending JSON errors/responses.
+
+// Security headers sent on every response. The CSP allows only same-origin scripts and styles,
+// so injected inline scripts and event-handler attributes (onerror=...) are refused by the browser.
+export const SECURITY_HEADERS = {
+  'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer'
+};
+
 export function sendJson(res, status, body) {
   const data = Buffer.from(JSON.stringify(body));
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': data.length, 'cache-control': 'no-store' });
+  res.writeHead(status, { ...SECURITY_HEADERS, 'content-type': 'application/json; charset=utf-8', 'content-length': data.length, 'cache-control': 'no-store' });
   res.end(data);
 }
 

@@ -1,0 +1,27 @@
+// Development view: layered modular monolith. Render: dot -Tpng development-view.dot -o development-view.png
+digraph DevelopmentView {
+  rankdir=LR;
+  graph [bgcolor="white", pad="0.2", nodesep="0.45", ranksep="0.6"];
+  node [shape=box, style="rounded,filled", fillcolor="#f7f9fc", fontname="Arial", fontsize=11, margin="0.15,0.08"];
+  edge [fontname="Arial", fontsize=9];
+
+  UI [label="Browser UI\nTypeScript components\nlogin · participant · organizer\njudge · admin", fillcolor="#eef3fd"];
+  App [label="Application layer\nControllers / REST routes\nauth + role checks"];
+  Logic [label="Business logic (services)\nAuth · Team · Registration · Submission\nEvaluation · Organizer · Result · Admin"];
+  Security [label="Upload scanner\nsignature + content checks\nClamAV when installed"];
+  Backup [label="Backup service\ndaily + on demand"];
+  Repo [label="Data access\nRepositories"];
+  DB [label="SQLite database (WAL)\nusers · teams · registrations\nsubmissions · submission_versions\ncriteria · evaluations · conflicts · audit_logs", shape=cylinder, fillcolor="#fdf6e6"];
+  Uploads [label="Artifact storage\n/uploads", shape=folder, fillcolor="#fdf6e6"];
+  Backups [label="Backups\n/backups/<timestamp>", shape=folder, fillcolor="#fdf6e6"];
+
+  UI -> App [label="HTTPS/REST + JSON"];
+  App -> Logic [label="defined operations"];
+  Logic -> Security [label="scan before store"];
+  Logic -> Repo [label="repository interfaces"];
+  Repo -> DB [label="SQL"];
+  Logic -> Uploads [label="validated file I/O"];
+  Backup -> DB [label="VACUUM INTO"];
+  Backup -> Uploads [label="copy"];
+  Backup -> Backups [label="write"];
+}

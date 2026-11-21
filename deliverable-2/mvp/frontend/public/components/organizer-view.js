@@ -1,6 +1,6 @@
 // Organizer dashboard: create/edit challenges, configure rubrics, assign judges,
 // start judging, inspect provisional rankings, publish results, and view audit logs.
-import { api } from '../api.js';
+import { api, escapeHtml } from '../api.js';
 // Convert an ISO date into the local datetime-local input format.
 function toLocalInput(iso) {
     const date = new Date(iso);
@@ -35,13 +35,19 @@ export class OrganizerView extends HTMLElement {
                 return [challenge.id, { rubric, ranking }];
             }));
             const details = new Map(detailEntries);
+            const needsJudge = submissionResult.submissions.filter((submission) => submission.needsReassignment);
             this.innerHTML = `<section>
         <h2>Organizer dashboard</h2>
         <p class="muted">Create and edit challenges, configure the rubric, assign judges, run judging, and publish results.</p>
 
+        ${needsJudge.length ? `<p class="warning reassign-banner">${needsJudge.length} submitted project${needsJudge.length === 1 ? ' needs' : 's need'} a new judge because a judge declared a conflict of interest: ${needsJudge.map((submission) => escapeHtml(submission.teamName)).join(', ')}.</p>` : ''}
+
         ${this.createChallengeForm()}
 
-        <h3>Challenge management</h3>
+        <div class="row spread section-heading">
+          <h3>Challenge management</h3>
+          <label class="search-label">Search<input id="organizer-search" type="search" placeholder="Search title, description or rules"></label>
+        </div>
         <div class="grid">
           ${challengeResult.challenges.map((challenge) => this.challengeCard(challenge, details.get(challenge.id))).join('') || '<p>No challenges yet.</p>'}
         </div>
@@ -50,14 +56,18 @@ export class OrganizerView extends HTMLElement {
         <div class="grid">
           ${submissionResult.submissions.map((submission) => `
             <article class="card">
-              <h4>${submission.teamName}</h4>
-              <p>${submission.challengeTitle}</p>
-              <p class="muted">Submitted: ${new Date(submission.submittedAt).toLocaleString()}</p>
-              <p class="muted">Assigned: ${submission.assignedJudges || 'none'}</p>
+              <div class="row spread">
+                <h4>${escapeHtml(submission.teamName)}</h4>
+                ${submission.needsReassignment ? '<span class="badge badge-warning">Needs reassignment</span>' : ''}
+              </div>
+              <p>${escapeHtml(submission.challengeTitle)}</p>
+              <p class="muted">Submitted: ${new Date(submission.submittedAt).toLocaleString()} (version ${submission.version})</p>
+              <p class="muted">Assigned: ${escapeHtml(submission.assignedJudges || 'none')}</p>
+              ${submission.conflictJudges ? `<p class="warning">Conflict declared by: ${escapeHtml(submission.conflictJudges)}</p>` : ''}
               <label>
                 Judge
                 <select data-judge-select="${submission.submissionId}">
-                  ${judgeResult.judges.map((judge) => `<option value="${judge.id}">${judge.name} (${judge.email})</option>`).join('')}
+                  ${judgeResult.judges.map((judge) => `<option value="${judge.id}">${escapeHtml(judge.name)} (${escapeHtml(judge.email)})</option>`).join('')}
                 </select>
               </label>
               <button data-assign="${submission.submissionId}">Assign / reassign judge</button>
@@ -73,9 +83,9 @@ export class OrganizerView extends HTMLElement {
               ${auditResult.events.slice(0, 30).map((event) => `
                 <tr>
                   <td>${new Date(event.createdAt).toLocaleString()}</td>
-                  <td>${event.eventType}</td>
-                  <td>${event.userEmail || '-'}</td>
-                  <td>${event.entityType} ${event.entityId || ''}</td>
+                  <td>${escapeHtml(event.eventType)}</td>
+                  <td>${escapeHtml(event.userEmail || '-')}</td>
+                  <td>${escapeHtml(event.entityType)} ${escapeHtml(event.entityId || '')}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -86,7 +96,7 @@ export class OrganizerView extends HTMLElement {
             this.bind();
         }
         catch (error) {
-            this.innerHTML = `<p class="error">${error.message}</p>`;
+            this.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
         }
     }
     // Form for creating a challenge instead of depending only on seeded demo data.
@@ -101,6 +111,7 @@ export class OrganizerView extends HTMLElement {
           <label>Minimum team size<input name="minTeamSize" type="number" min="1" max="20" value="1" required></label>
           <label>Maximum team size<input name="maxTeamSize" type="number" min="1" max="20" value="4" required></label>
         </div>
+        <label>Maximum number of teams (blank = unlimited)<input name="maxTeams" type="number" min="1" max="1000"></label>
         <div class="two-col">
           <label>Registration deadline<input name="registrationDeadline" type="datetime-local" value="${futureLocal(7)}" required></label>
           <label>Submission deadline<input name="submissionDeadline" type="datetime-local" value="${futureLocal(10)}" required></label>
@@ -117,25 +128,28 @@ export class OrganizerView extends HTMLElement {
         const rows = rubric.criteria.map((criterion) => this.criterionRow(criterion, rubric.editable)).join('');
         return `<article class="card rubric-card">
       <div class="row spread">
-        <h3>${challenge.title}</h3>
-        <span class="badge">${challenge.status}</span>
+        <h3>${escapeHtml(challenge.title)}</h3>
+        <span class="badge">${escapeHtml(challenge.status)}</span>
       </div>
 
       <form class="challenge-edit stack" data-challenge-form="${challenge.id}">
         <h4>Challenge details</h4>
-        <label>Title<input name="title" value="${challenge.title}" ${disabled} required></label>
-        <label>Description<textarea name="description" rows="2" ${disabled} required>${challenge.description}</textarea></label>
-        <label>Rules<textarea name="rules" rows="2" ${disabled} required>${challenge.rules}</textarea></label>
+        <label>Title<input name="title" value="${escapeHtml(challenge.title)}" ${disabled} required></label>
+        <label>Description<textarea name="description" rows="2" ${disabled} required>${escapeHtml(challenge.description)}</textarea></label>
+        <label>Rules<textarea name="rules" rows="2" ${disabled} required>${escapeHtml(challenge.rules)}</textarea></label>
         <div class="two-col">
           <label>Minimum team size<input name="minTeamSize" type="number" min="1" max="20" value="${challenge.minTeamSize}" ${disabled} required></label>
           <label>Maximum team size<input name="maxTeamSize" type="number" min="1" max="20" value="${challenge.maxTeamSize}" ${disabled} required></label>
         </div>
+        <label>Maximum number of teams (blank = unlimited)<input name="maxTeams" type="number" min="1" max="1000" value="${challenge.maxTeams ?? ''}" ${disabled}></label>
         <div class="two-col">
           <label>Registration deadline<input name="registrationDeadline" type="datetime-local" value="${toLocalInput(challenge.registrationDeadline)}" ${disabled} required></label>
           <label>Submission deadline<input name="submissionDeadline" type="datetime-local" value="${toLocalInput(challenge.submissionDeadline)}" ${disabled} required></label>
         </div>
         ${editable ? '<button type="submit">Save challenge changes</button>' : '<p class="warning">Challenge details are locked after judging starts.</p>'}
       </form>
+
+      ${this.registrationList(challenge)}
 
       <form class="rubric-form stack" data-rubric-form="${challenge.id}">
         <div class="row spread">
@@ -156,11 +170,29 @@ export class OrganizerView extends HTMLElement {
       ${challenge.status === 'judging' || challenge.status === 'published' ? this.rankingSection(challenge, ranking) : ''}
     </article>`;
     }
+    // Teams registered for this challenge (UC2 step 5).
+    registrationList(challenge) {
+        const count = challenge.registrations.length;
+        return `<section class="registration-list">
+      <h4>Registered teams (${count}${challenge.maxTeams ? ` / ${challenge.maxTeams}` : ''})</h4>
+      ${count ? `<div class="table-wrap">
+        <table>
+          <thead><tr><th>Team</th><th>Members</th><th>Registered</th><th>Submission</th></tr></thead>
+          <tbody>${challenge.registrations.map((registration) => `<tr>
+            <td>${escapeHtml(registration.teamName)}</td>
+            <td>${registration.size}</td>
+            <td>${new Date(registration.registeredAt).toLocaleString()}</td>
+            <td>${registration.submittedAt ? `Version ${registration.submissionVersion}, ${new Date(registration.submittedAt).toLocaleString()}` : 'Not submitted'}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>` : '<p class="muted">No teams registered yet.</p>'}
+    </section>`;
+    }
     // Render one rubric row.
     criterionRow(criterion, editable) {
         const disabled = editable ? '' : 'disabled';
-        const safeName = String(criterion.name || '').replace(/"/g, '&quot;');
-        const safeDescription = String(criterion.description || '').replace(/"/g, '&quot;');
+        const safeName = escapeHtml(criterion.name);
+        const safeDescription = escapeHtml(criterion.description);
         return `<div class="rubric-row">
       <label>Name<input name="criterionName" value="${safeName}" ${disabled} required></label>
       <label>Description<input name="criterionDescription" value="${safeDescription}" ${disabled}></label>
@@ -173,14 +205,14 @@ export class OrganizerView extends HTMLElement {
     rankingSection(challenge, ranking) {
         return `<section class="ranking-box">
       <h4>${challenge.status === 'published' ? 'Published results' : 'Provisional ranking'}</h4>
-      <p class="muted">${ranking.formula}</p>
+      <p class="muted">${escapeHtml(ranking.formula)}</p>
       <p class="muted">Evaluated submissions: ${ranking.evaluatedSubmissionCount}/${ranking.submissionCount}</p>
       ${ranking.ranking.length ? `
         <div class="table-wrap">
           <table>
             <thead><tr><th>Rank</th><th>Team</th><th>Score</th><th>Evaluations</th></tr></thead>
             <tbody>${ranking.ranking.map((row) => `
-              <tr><td>#${row.position}</td><td>${row.teamName}</td><td>${Number(row.provisionalScore).toFixed(2)}</td><td>${row.evaluationCount}</td></tr>
+              <tr><td>#${row.position}</td><td>${escapeHtml(row.teamName)}</td><td>${Number(row.provisionalScore).toFixed(2)}</td><td>${row.evaluationCount}</td></tr>
             `).join('')}</tbody>
           </table>
         </div>` : '<p class="muted">No evaluated submissions yet.</p>'}
@@ -204,6 +236,7 @@ export class OrganizerView extends HTMLElement {
                     rules: data.get('rules'),
                     minTeamSize: Number(data.get('minTeamSize')),
                     maxTeamSize: Number(data.get('maxTeamSize')),
+                    maxTeams: data.get('maxTeams') || null,
                     registrationDeadline: toIso(data.get('registrationDeadline')),
                     submissionDeadline: toIso(data.get('submissionDeadline'))
                 })
@@ -223,11 +256,21 @@ export class OrganizerView extends HTMLElement {
                     rules: data.get('rules'),
                     minTeamSize: Number(data.get('minTeamSize')),
                     maxTeamSize: Number(data.get('maxTeamSize')),
+                    maxTeams: data.get('maxTeams') || null,
                     registrationDeadline: toIso(data.get('registrationDeadline')),
                     submissionDeadline: toIso(data.get('submissionDeadline'))
                 })
             }), 'Challenge updated.');
         }));
+        // Filter challenge cards by their visible text and form contents (FR3 search).
+        this.querySelector('#organizer-search')?.addEventListener('input', (event) => {
+            const term = event.target.value.trim().toLowerCase();
+            this.querySelectorAll('.rubric-card').forEach((card) => {
+                const fields = [...card.querySelectorAll('input,textarea')].map((field) => field.value).join(' ');
+                const text = `${card.textContent || ''} ${fields}`.toLowerCase();
+                card.style.display = !term || text.includes(term) ? '' : 'none';
+            });
+        });
         // Add one blank rubric row.
         this.querySelectorAll('[data-add-criterion]').forEach((button) => button.addEventListener('click', () => {
             const challengeId = Number(button.dataset.addCriterion);

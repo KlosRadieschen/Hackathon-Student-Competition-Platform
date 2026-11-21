@@ -1,7 +1,7 @@
 // Import the file system because authorized users may download stored submission artifacts.
 import fs from 'node:fs';
 // Import the JSON request/response helpers used by all API routes.
-import { readJson, sendJson } from '../http/response.mjs';
+import { SECURITY_HEADERS, readJson, sendJson } from '../http/response.mjs';
 // Import authentication helpers so every protected route verifies the current user and role.
 import { authenticate, requireRole } from '../http/auth.mjs';
 
@@ -19,10 +19,17 @@ export function registerApiRoutes(router, deps) {
     organizerService,
     evaluationService,
     resultService,
+    adminService,
     evaluationRepo
   } = deps;
 
   // ---- Authentication ----------------------------------------------------
+
+  // Create a participant account and receive a signed access token.
+  router.add('POST', '/api/auth/register', async (req, res) => {
+    const body = await readJson(req);
+    sendJson(res, 201, authService.register(body.name, body.email, body.password));
+  });
 
   // Log in with email/password and receive a signed access token.
   router.add('POST', '/api/auth/login', async (req, res) => {
@@ -49,6 +56,8 @@ export function registerApiRoutes(router, deps) {
         rules: challenge.rules || '',
         minTeamSize: challenge.min_team_size,
         maxTeamSize: challenge.max_team_size,
+        maxTeams: challenge.max_teams,
+        registeredTeams: challenges.registrationCount(challenge.id),
         registrationDeadline: challenge.registration_deadline,
         submissionDeadline: challenge.submission_deadline,
         status: challenge.status,
@@ -80,6 +89,13 @@ export function registerApiRoutes(router, deps) {
     requireRole(user, 'participant');
     const body = await readJson(req);
     sendJson(res, 200, { team: teamService.joinTeam(user.id, body.inviteCode) });
+  });
+
+  // Leave the current team while its registration rules still allow it.
+  router.add('POST', '/api/teams/leave', async (req, res) => {
+    const user = authenticate(req, users);
+    requireRole(user, 'participant');
+    sendJson(res, 200, teamService.leaveTeam(user.id));
   });
 
   // Register the current participant's team for one challenge.
@@ -241,6 +257,7 @@ export function registerApiRoutes(router, deps) {
     const submission = submissionService.artifactAccess(user, Number(params.id), evaluationRepo);
     const data = fs.readFileSync(submission.artifact_path);
     res.writeHead(200, {
+      ...SECURITY_HEADERS,
       'content-type': submission.artifact_mime || 'application/octet-stream',
       'content-disposition': `attachment; filename="${String(submission.artifact_name || 'artifact').replace(/"/g, '')}"`,
       'content-length': data.length,
@@ -256,5 +273,50 @@ export function registerApiRoutes(router, deps) {
     const user = authenticate(req, users);
     requireRole(user, 'organizer', 'admin');
     sendJson(res, 200, { events: audit.list(100) });
+  });
+
+  // ---- Platform admin ----------------------------------------------------
+
+  // List every account with its role.
+  router.add('GET', '/api/admin/users', async (req, res) => {
+    const user = authenticate(req, users);
+    requireRole(user, 'admin');
+    sendJson(res, 200, { users: adminService.listUsers() });
+  });
+
+  // Change one account's role.
+  router.add('PUT', '/api/admin/users/:id/role', async (req, res, params) => {
+    const user = authenticate(req, users);
+    requireRole(user, 'admin');
+    const body = await readJson(req);
+    sendJson(res, 200, adminService.changeRole(user.id, Number(params.id), body.role));
+  });
+
+  // Reset one account to a temporary password.
+  router.add('POST', '/api/admin/users/:id/reset', async (req, res, params) => {
+    const user = authenticate(req, users);
+    requireRole(user, 'admin');
+    sendJson(res, 200, adminService.resetAccount(user.id, Number(params.id)));
+  });
+
+  // Show recent failed submission/upload attempts with their error codes.
+  router.add('GET', '/api/admin/upload-errors', async (req, res) => {
+    const user = authenticate(req, users);
+    requireRole(user, 'admin');
+    sendJson(res, 200, { errors: adminService.uploadErrors() });
+  });
+
+  // List stored backups.
+  router.add('GET', '/api/admin/backups', async (req, res) => {
+    const user = authenticate(req, users);
+    requireRole(user, 'admin');
+    sendJson(res, 200, { backups: adminService.listBackups() });
+  });
+
+  // Take a backup immediately.
+  router.add('POST', '/api/admin/backups', async (req, res) => {
+    const user = authenticate(req, users);
+    requireRole(user, 'admin');
+    sendJson(res, 201, { backup: adminService.createBackup(user.id) });
   });
 }

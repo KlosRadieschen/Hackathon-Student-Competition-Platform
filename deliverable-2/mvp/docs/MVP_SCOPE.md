@@ -2,16 +2,21 @@
 
 ## Included in the complete D2 MVP
 
-- Email/password login for seeded classroom accounts
+- Participant self-service sign-up and email/password login
 - Role-based participant / organizer / judge / admin access
 - Organizer create/edit challenge
 - Configurable challenge title, description, rules, team-size limits, registration deadline, submission deadline
-- Participant challenge search
-- Team creation and invite-code joining
+- Participant and organizer challenge search
+- Optional challenge capacity (maximum number of teams); full challenges refuse registration
+- Organizer list of registered teams per challenge
+- Team creation, invite-code joining, and leaving a team
+- Team-size limits enforced on registration, joining, leaving, and organizer edits
 - One challenge per team assumption
 - Team-size eligibility check
-- Project repository link, description, optional artifact
-- One active submission, editable before deadline
+- Project description plus repository link and/or artifact (empty submissions rejected)
+- Upload scanning: malware test signature, file-content checks, ClamAV when installed
+- One active submission, editable before deadline, with version history of every replaced submission
+- Invite link that pre-fills the join form
 - Timestamped submission receipt
 - Organizer-configurable rubric
 - Judge assignment and reassignment
@@ -24,21 +29,20 @@
 - Organizer publish-results action
 - Participant rank/score/feedback after publication
 - Audit log for important competition actions
+- Platform-admin dashboard: role changes, account resets, failed-upload log, backups
+- Automatic daily backups of database and artifacts, plus on-demand backups
 - Automated requirement-based tests
 
 ## Intentionally outside D2 MVP
 
 These remain outside the selected D2 scope rather than being silently treated as missing bugs:
 
-- self-service public user registration/signup (seeded accounts are used for the classroom MVP)
-- participant leave-team operation
 - team-finder board
-- challenge-capacity waitlist
-- submission version history
-- production antivirus/malware scanning and object storage
+- waitlist when a challenge is full (capacity itself is enforced)
+- repository-reachability check
+- a mandatory production antivirus service and object storage (ClamAV is used only when installed)
 - production notification/email infrastructure
-- production monitoring/backups/HTTPS deployment
+- production monitoring, off-machine backup storage, and HTTPS deployment
 - a permanently fixed final ranking/normalization policy beyond the clearly-labelled MVP formula
-- full platform-admin account-management UI
 
 The reason for this boundary is the D2 instruction: implement selected essential/core use cases consistently with the architecture; the MVP does not need every planned final-system feature.

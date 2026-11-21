@@ -21,15 +21,16 @@ export function createChallengeRepository(db) {
     create(input) {
       const result = db.prepare(`
         INSERT INTO challenges(
-          title,description,rules,min_team_size,max_team_size,
+          title,description,rules,min_team_size,max_team_size,max_teams,
           registration_deadline,submission_deadline,status,organizer_id,published_at
-        ) VALUES(?,?,?,?,?,?,?,'open',?,NULL)
+        ) VALUES(?,?,?,?,?,?,?,?,'open',?,NULL)
       `).run(
         input.title,
         input.description,
         input.rules,
         input.minTeamSize,
         input.maxTeamSize,
+        input.maxTeams,
         input.registrationDeadline,
         input.submissionDeadline,
         input.organizerId
@@ -41,7 +42,7 @@ export function createChallengeRepository(db) {
     update(id, input) {
       const result = db.prepare(`
         UPDATE challenges
-        SET title=?,description=?,rules=?,min_team_size=?,max_team_size=?,
+        SET title=?,description=?,rules=?,min_team_size=?,max_team_size=?,max_teams=?,
             registration_deadline=?,submission_deadline=?
         WHERE id=?
       `).run(
@@ -50,6 +51,7 @@ export function createChallengeRepository(db) {
         input.rules,
         input.minTeamSize,
         input.maxTeamSize,
+        input.maxTeams,
         input.registrationDeadline,
         input.submissionDeadline,
         id
@@ -109,6 +111,28 @@ export function createChallengeRepository(db) {
         db.exec('ROLLBACK');
         throw error;
       }
+    },
+
+    // List the teams registered for a challenge with their current size and submission state (UC2 step 5).
+    registrationList(challengeId) {
+      return db.prepare(`
+        SELECT r.id AS registrationId,
+               t.name AS teamName,
+               (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id=t.id) AS size,
+               r.registered_at AS registeredAt,
+               s.submitted_at AS submittedAt,
+               s.version AS submissionVersion
+        FROM registrations r
+        JOIN teams t ON t.id=r.team_id
+        LEFT JOIN submissions s ON s.registration_id=r.id
+        WHERE r.challenge_id=?
+        ORDER BY r.id
+      `).all(challengeId).map((row) => ({ ...row, size: Number(row.size) }));
+    },
+
+    // Count registered teams so challenge capacity can be enforced.
+    registrationCount(challengeId) {
+      return Number(db.prepare('SELECT COUNT(*) AS n FROM registrations WHERE challenge_id=?').get(challengeId).n);
     },
 
     // Count stored evaluations for a challenge so rubric editing cannot invalidate completed judging.

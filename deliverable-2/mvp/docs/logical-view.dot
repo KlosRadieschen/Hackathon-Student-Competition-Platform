@@ -1,0 +1,75 @@
+// Logical view (UML class diagram) of the D2 MVP domain. Render: dot -Tpng logical-view.dot -o logical-view.png
+digraph LogicalView {
+  graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.6", ranksep="0.9", splines=ortho, fontname="Arial"];
+  node [shape=plaintext, fontname="Arial", fontsize=11];
+  edge [fontname="Arial", fontsize=9, arrowhead=none, color="#444444"];
+
+  Account [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#e6edf6"><i><b>Account</b></i></td></tr>
+    <tr><td align="left">accountId : Integer<br align="left"/>name : String<br align="left"/>email : String<br align="left"/>passwordHash : String<br align="left"/>role : Role<br align="left"/></td></tr></table>>];
+  Participant [label=<<table border="1" cellborder="0" cellpadding="6" bgcolor="#e8f3e2"><tr><td><b>Participant</b></td></tr></table>>];
+  Organizer [label=<<table border="1" cellborder="0" cellpadding="6" bgcolor="#e8f3e2"><tr><td><b>Organizer</b></td></tr></table>>];
+  Judge [label=<<table border="1" cellborder="0" cellpadding="6" bgcolor="#e8f3e2"><tr><td><b>Judge</b></td></tr></table>>];
+  PlatformAdmin [label=<<table border="1" cellborder="0" cellpadding="6" bgcolor="#e8f3e2"><tr><td><b>PlatformAdmin</b></td></tr></table>>];
+
+  Challenge [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#e8f3e2"><b>Challenge</b></td></tr>
+    <tr><td align="left">challengeId : Integer<br align="left"/>title : String<br align="left"/>description : String<br align="left"/>rules : String<br align="left"/>minTeamSize : Integer<br align="left"/>maxTeamSize : Integer<br align="left"/>maxTeams : Integer [0..1]<br align="left"/>registrationDeadline : DateTime<br align="left"/>submissionDeadline : DateTime<br align="left"/>status : open | judging | published<br align="left"/></td></tr></table>>];
+  Team [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#e8f3e2"><b>Team</b></td></tr>
+    <tr><td align="left">teamId : Integer<br align="left"/>name : String<br align="left"/>inviteCode : String<br align="left"/>/teamSize : Integer<br align="left"/></td></tr></table>>];
+  Registration [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#e8f3e2"><b>Registration</b></td></tr>
+    <tr><td align="left">registrationId : Integer<br align="left"/>registeredAt : DateTime<br align="left"/>status : String<br align="left"/></td></tr></table>>];
+  Submission [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#e8f3e2"><b>Submission</b></td></tr>
+    <tr><td align="left">submissionId : Integer<br align="left"/>repositoryLink : URL [0..1]<br align="left"/>description : String<br align="left"/>artifactName : String [0..1]<br align="left"/>submittedAt : DateTime<br align="left"/>version : Integer<br align="left"/></td></tr></table>>];
+  SubmissionVersion [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#e8f3e2"><b>SubmissionVersion</b></td></tr>
+    <tr><td align="left">version : Integer<br align="left"/>repositoryLink : URL [0..1]<br align="left"/>description : String<br align="left"/>artifactName : String [0..1]<br align="left"/>submittedAt : DateTime<br align="left"/>replacedAt : DateTime<br align="left"/></td></tr></table>>];
+  JudgeAssignment [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#e8f3e2"><b>JudgeAssignment</b></td></tr>
+    <tr><td align="left">assignedAt : DateTime<br align="left"/>status : active | conflict<br align="left"/>conflictCheckedAt : DateTime [0..1]<br align="left"/></td></tr></table>>];
+  ConflictOfInterest [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#fde5e5"><b>ConflictOfInterest</b></td></tr>
+    <tr><td align="left">conflictId : Integer<br align="left"/>reason : String<br align="left"/>declaredAt : DateTime<br align="left"/></td></tr></table>>];
+  EvaluationCriterion [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#fdf0dc"><b>EvaluationCriterion</b></td></tr>
+    <tr><td align="left">criterionId : Integer<br align="left"/>name : String<br align="left"/>description : String<br align="left"/>weight : Float<br align="left"/>maxScore : Float<br align="left"/></td></tr></table>>];
+  Evaluation [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#e8f3e2"><b>Evaluation</b></td></tr>
+    <tr><td align="left">evaluationId : Integer<br align="left"/>/totalScore : Float<br align="left"/>feedback : String<br align="left"/>submittedAt : DateTime<br align="left"/></td></tr></table>>];
+  CriterionScore [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#fdf0dc"><b>CriterionScore</b></td></tr>
+    <tr><td align="left">score : Float<br align="left"/>comment : String<br align="left"/></td></tr></table>>];
+  AuditEvent [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="white">
+    <tr><td bgcolor="#e6edf6"><b>AuditEvent</b></td></tr>
+    <tr><td align="left">eventType : String<br align="left"/>entityType : String<br align="left"/>details : JSON<br align="left"/>createdAt : DateTime<br align="left"/></td></tr></table>>];
+
+  { rank=same; Organizer; Participant; PlatformAdmin; Judge; }
+  { rank=same; Challenge; Team; Account; ConflictOfInterest; EvaluationCriterion; }
+  { rank=same; Registration; Submission; Evaluation; CriterionScore; }
+
+  // Generalization: every role is an Account.
+  Participant -> Account [arrowhead=empty];
+  Organizer -> Account [arrowhead=empty];
+  Judge -> Account [arrowhead=empty];
+  PlatformAdmin -> Account [arrowhead=empty];
+
+  Organizer -> Challenge [xlabel="manages", taillabel="1", headlabel="0..*"];
+  Participant -> Team [xlabel="member of", taillabel="1..*", headlabel="0..1"];
+  Team -> Registration [xlabel="creates", taillabel="1", headlabel="0..1"];
+  Challenge -> Registration [xlabel="receives", taillabel="1", headlabel="0..maxTeams"];
+  Challenge -> EvaluationCriterion [xlabel="defines rubric", taillabel="1", headlabel="1..*"];
+  Registration -> Submission [xlabel="has", taillabel="1", headlabel="0..1"];
+  Submission -> SubmissionVersion [xlabel="history", taillabel="1", headlabel="0..*"];
+  Judge -> JudgeAssignment [xlabel="assigned via", taillabel="1", headlabel="0..*"];
+  JudgeAssignment -> Submission [taillabel="0..*", headlabel="1"];
+  Judge -> ConflictOfInterest [xlabel="declares", taillabel="1", headlabel="0..*"];
+  ConflictOfInterest -> Submission [xlabel="concerns", taillabel="0..*", headlabel="1"];
+  Judge -> Evaluation [xlabel="performs", taillabel="1", headlabel="0..*"];
+  Submission -> Evaluation [xlabel="receives", taillabel="1", headlabel="0..*"];
+  Evaluation -> CriterionScore [xlabel="contains", taillabel="1", headlabel="1..*", arrowtail=diamond, dir=both];
+  EvaluationCriterion -> CriterionScore [xlabel="scored by", taillabel="1", headlabel="0..*"];
+  Account -> AuditEvent [xlabel="performs", taillabel="0..1", headlabel="0..*"];
+}

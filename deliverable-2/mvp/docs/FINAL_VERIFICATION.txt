@@ -6,8 +6,8 @@ Verification basis
 - D2 requirement: architecture-consistent working MVP
 
 Automated service tests
-- 12 tests executed
-- 12 passed
+- 28 tests executed
+- 28 passed
 - 0 failed
 
 The suite covers:
@@ -23,6 +23,26 @@ The suite covers:
 10. Complete rubric evaluation + provisional weighted total
 11. Organizer challenge create/edit + deadline audit events
 12. Ranking + publication + participant result/feedback visibility
+13. Participant sign-up + duplicate email + password rules
+14. Max team size on join + membership lock after judging starts
+15. Leave team: ownership transfer, empty-team deletion, registered minimum
+16. Organizer cannot set limits that exclude a registered team
+17. Empty submissions rejected + failed attempts logged
+18. Upload scanning: malware test signature + disguised content
+19. Admin role change + account reset
+20. Database/artifact backups + pruning
+21. HTML payloads in links/emails rejected + server-set artifact type
+22. escapeHtml neutralises script payloads
+23. safeUrl allows only http(s) links
+24. Challenge capacity + capacity edit guard
+25. Organizer registration list
+26. Needs-reassignment flag + conflicted judge cannot be reassigned
+27. Version history keeps replaced submissions and files
+28. Error messages show deadline time and failing file name
+
+Non-functional checks
+- npm run load-test (NFR2): deadline rush PASS (p95 29 ms), worst-case burst PASS (no lost submissions) — see PERFORMANCE.md
+- npm run mobile-check (NFR4): all six screens fit 390 px without horizontal scrolling — see USABILITY_CHECK.md
 
 Live HTTP verification — successful branch
 - Organizer-created challenge accepted
@@ -48,6 +68,20 @@ Live HTTP verification — conflict/reassignment branch
 - Results published
 - Participant could view result
 - Audit contained CONFLICT_DECLARED, JUDGE_REASSIGNMENT_REQUIRED, and RESULTS_PUBLISHED
+
+Live HTTP verification — gap fixes
+- Participant sign-up returned a token; duplicate email refused
+- Leaving a one-person team deleted it
+- Empty submission refused (SUBMISSION_DESCRIPTION_REQUIRED)
+- Executable bytes named .pdf refused (FILE_CONTENT_MISMATCH)
+- Both failures listed in the admin failed-upload log
+- Participant refused on admin routes
+- Admin changed a role and reset an account
+- Startup backup created automatically; manual backup created
+
+Security headers
+- Content-Security-Policy, X-Content-Type-Options and Referrer-Policy sent on pages, scripts and API responses
+- All frontend module scripts still load under the policy
 
 Frontend compilation
 - TypeScript frontend compiled successfully

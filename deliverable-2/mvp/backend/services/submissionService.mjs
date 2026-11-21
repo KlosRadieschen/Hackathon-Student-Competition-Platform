@@ -2,54 +2,101 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { MAX_ARTIFACT_BYTES, UPLOAD_DIR } from '../config.mjs';
+import { scanArtifact } from '../security/uploadScanner.mjs';
 
-const allowedExt = new Set(['.pdf', '.zip', '.txt', '.md']);
+// The stored content type comes from the validated extension, never from the browser-supplied type.
+const mimeByExt = { '.pdf': 'application/pdf', '.zip': 'application/zip', '.txt': 'text/plain', '.md': 'text/markdown' };
+
+// Accept only absolute http(s) URLs with no quotes, angle brackets, or whitespace.
+function isValidRepositoryLink(value) {
+  if (/["'<>\s`]/.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 function sanitize(name) {
   return path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
 export function createSubmissionService(challenges, teams, registrations, submissions, audit) {
+  function store(userId, registrationId, payload) {
+    const registration = registrations.findById(registrationId);
+    if (!registration) throw Object.assign(new Error('Registration not found'), { status: 404, code: 'REGISTRATION_NOT_FOUND' });
+    const team = teams.findForUser(userId);
+    if (!team || Number(registration.team_id) !== Number(team.id)) {
+      throw Object.assign(new Error('You cannot submit for this registration'), { status: 403, code: 'FORBIDDEN' });
+    }
+    const challenge = challenges.findById(registration.challenge_id);
+    if (!challenge || challenge.status !== 'open' || Date.now() > Date.parse(challenge.submission_deadline)) {
+      // UC1 extension 3a: tell the team when the deadline was.
+      const closedAt = challenge ? new Date(challenge.submission_deadline).toUTCString() : 'unknown';
+      throw Object.assign(new Error(`The submission deadline has passed (${closedAt})`), { status: 409, code: 'SUBMISSION_CLOSED' });
+    }
+    const repositoryLink = String(payload.repositoryLink || '').trim();
+    if (repositoryLink && !isValidRepositoryLink(repositoryLink)) {
+      throw Object.assign(new Error('Repository link must be a valid http:// or https:// URL'), { status: 400, code: 'INVALID_REPOSITORY_LINK' });
+    }
+    const previous = submissions.findByRegistration(registrationId);
+    const artifact = payload.artifact;
+    const hasNewArtifact = Boolean(artifact?.name && artifact?.dataBase64);
+    // UC1 required fields: a short description plus a repository link or a project file.
+    const description = String(payload.description || '').trim();
+    if (description.length < 3) {
+      throw Object.assign(new Error('Add a short project description'), { status: 400, code: 'SUBMISSION_DESCRIPTION_REQUIRED' });
+    }
+    if (!repositoryLink && !hasNewArtifact && !previous?.artifact_path) {
+      throw Object.assign(new Error('Provide a repository link or upload a project file'), { status: 400, code: 'SUBMISSION_CONTENT_REQUIRED' });
+    }
+    // Preserve the existing artifact when the participant updates only the link/description.
+    let artifactName = previous?.artifact_name || null;
+    let artifactPath = previous?.artifact_path || null;
+    let artifactMime = previous?.artifact_mime || null;
+    let scanEngine = null;
+    if (hasNewArtifact) {
+      const buffer = Buffer.from(String(artifact.dataBase64), 'base64');
+      // UC1 extension 3b: every file error names the file that failed.
+      const safe = sanitize(String(artifact.name));
+      if (buffer.length > MAX_ARTIFACT_BYTES) throw Object.assign(new Error(`${safe} is larger than 1 MB`), { status: 413, code: 'FILE_TOO_LARGE' });
+      const ext = path.extname(safe).toLowerCase();
+      if (!mimeByExt[ext]) throw Object.assign(new Error(`${safe}: allowed file types are PDF, ZIP, TXT, MD`), { status: 415, code: 'INVALID_FILE_TYPE' });
+      try {
+        scanEngine = scanArtifact(buffer, ext).engine;
+      } catch (error) {
+        error.message = `${safe}: ${error.message}`;
+        throw error;
+      }
+      artifactName = safe;
+      artifactMime = mimeByExt[ext];
+      artifactPath = path.join(UPLOAD_DIR, `${registrationId}-${Date.now()}-${safe}`);
+      fs.writeFileSync(artifactPath, buffer);
+    }
+    // Capture one timestamp and use the same value for persistence and the participant receipt.
+    const submittedAt = new Date().toISOString();
+    // The previous version (and its artifact file) is kept in submission history rather than deleted.
+    const { id, version } = submissions.upsert(registrationId, repositoryLink || null, description, artifactName, artifactPath, artifactMime, submittedAt);
+    audit.add(userId, previous ? 'SUBMISSION_UPDATED' : 'SUBMISSION_CREATED', 'submission', id, { registrationId, version, artifactName, repositoryLink: repositoryLink || null, scanEngine });
+    return { submissionId: id, status: 'submitted', updated: Boolean(previous), version, submittedAt };
+  }
+
   return {
     submit(userId, registrationId, payload) {
-      const registration = registrations.findById(registrationId);
-      if (!registration) throw Object.assign(new Error('Registration not found'), { status: 404, code: 'REGISTRATION_NOT_FOUND' });
-      const team = teams.findForUser(userId);
-      if (!team || Number(registration.team_id) !== Number(team.id)) {
-        throw Object.assign(new Error('You cannot submit for this registration'), { status: 403, code: 'FORBIDDEN' });
+      try {
+        return store(userId, registrationId, payload);
+      } catch (error) {
+        // Log every failed attempt so a platform admin can help a team near the deadline without a developer.
+        const artifact = payload?.artifact;
+        audit.add(userId, 'UPLOAD_FAILED', 'registration', registrationId, {
+          code: error?.code || 'INTERNAL_ERROR',
+          message: String(error?.message || error),
+          artifactName: artifact?.name || null,
+          artifactBytes: artifact?.dataBase64 ? Buffer.byteLength(String(artifact.dataBase64), 'base64') : null
+        });
+        throw error;
       }
-      const challenge = challenges.findById(registration.challenge_id);
-      if (!challenge || challenge.status !== 'open' || Date.now() > Date.parse(challenge.submission_deadline)) {
-        throw Object.assign(new Error('Submission deadline has passed'), { status: 409, code: 'SUBMISSION_CLOSED' });
-      }
-      const repositoryLink = String(payload.repositoryLink || '').trim();
-      if (repositoryLink && !/^https?:\/\//i.test(repositoryLink)) {
-        throw Object.assign(new Error('Repository link must start with http:// or https://'), { status: 400, code: 'INVALID_REPOSITORY_LINK' });
-      }
-      const previous = submissions.findByRegistration(registrationId);
-      // Preserve the existing artifact when the participant updates only the link/description.
-      let artifactName = previous?.artifact_name || null;
-      let artifactPath = previous?.artifact_path || null;
-      let artifactMime = previous?.artifact_mime || null;
-      const artifact = payload.artifact;
-      if (artifact?.name && artifact?.dataBase64) {
-        const buffer = Buffer.from(String(artifact.dataBase64), 'base64');
-        if (buffer.length > MAX_ARTIFACT_BYTES) throw Object.assign(new Error('Artifact is larger than 1 MB'), { status: 413, code: 'FILE_TOO_LARGE' });
-        const safe = sanitize(String(artifact.name));
-        const ext = path.extname(safe).toLowerCase();
-        if (!allowedExt.has(ext)) throw Object.assign(new Error('Allowed artifact types: PDF, ZIP, TXT, MD'), { status: 415, code: 'INVALID_FILE_TYPE' });
-        artifactName = safe;
-        artifactMime = String(artifact.type || 'application/octet-stream');
-        artifactPath = path.join(UPLOAD_DIR, `${registrationId}-${Date.now()}-${safe}`);
-        fs.writeFileSync(artifactPath, buffer);
-      }
-      // Capture one timestamp and use the same value for persistence and the participant receipt.
-      const submittedAt = new Date().toISOString();
-      const id = submissions.upsert(registrationId, repositoryLink || null, String(payload.description || '').trim(), artifactName, artifactPath, artifactMime, submittedAt);
-      // If a new artifact replaced the previous one, remove the old physical file after the database update succeeds.
-      if (previous?.artifact_path && artifact?.name && previous.artifact_path !== artifactPath && fs.existsSync(previous.artifact_path)) fs.rmSync(previous.artifact_path);
-      audit.add(userId, previous ? 'SUBMISSION_UPDATED' : 'SUBMISSION_CREATED', 'submission', id, { registrationId, artifactName, repositoryLink: repositoryLink || null });
-      return { submissionId: id, status: 'submitted', updated: Boolean(previous), submittedAt };
     },
     artifactAccess(user, submissionId, evaluationRepo) {
       const submission = submissions.findById(submissionId);

@@ -34,6 +34,11 @@ Important routes include:
 - `GET /api/challenges/:id/ranking` — provisional ranking
 - `POST /api/challenges/:id/publish-results` — result publication
 - `GET /api/results/me` — participant published result
+- `POST /api/auth/register` — participant sign-up
+- `POST /api/teams/leave` — leave team
+- `GET /api/admin/users`, `PUT /api/admin/users/:id/role`, `POST /api/admin/users/:id/reset` — admin account management
+- `GET /api/admin/upload-errors` — failed upload log
+- `GET/POST /api/admin/backups` — list / create backups
 
 Controllers never query SQLite directly.
 
@@ -69,9 +74,19 @@ UC1 logic checks:
 - participant belongs to the registered team;
 - challenge/submission deadline is open;
 - repository URL format;
-- optional artifact prototype type/size restrictions.
+- required fields: a description plus a repository link or file;
+- artifact prototype type/size restrictions;
+- upload scanning through `backend/security/uploadScanner.mjs` (EICAR signature, file-content check, ClamAV when installed).
 
-It stores one active submission per registration. Updates replace active values rather than keeping version history. If no new artifact is supplied, the previous artifact is preserved. The response includes the same stored timestamp used for the participant receipt.
+Every failed attempt is written to the audit log as `UPLOAD_FAILED` so the admin dashboard can show it.
+
+It stores one active submission per registration. Each update archives the previous version (including its file) into `submission_versions` in the same transaction, so the team can see its history. If no new artifact is supplied, the previous artifact is preserved. The response includes the same stored timestamp used for the participant receipt.
+
+## 5a. `backend/services/teamService.mjs`
+Create, join, and leave a team. Joining and leaving keep a registered team within its challenge's min/max size, and membership locks once submissions close.
+
+## 5b. `backend/services/adminService.mjs` and `backupService.mjs`
+Admin role changes, account resets, the failed-upload log, and backups. `backupService` copies the database with `VACUUM INTO` plus every artifact, runs every 24 hours from `server.mjs`, and keeps the newest 14.
 
 ## 6. `backend/services/evaluationService.mjs`
 This contains the teacher-feedback correction.
@@ -97,7 +112,9 @@ The result repository calculates the D2 MVP provisional ranking from the average
 
 ### `participant-view.ts`
 - team create/join;
-- challenge search;
+- challenge search, capacity, and full-challenge state;
+- invite link and invite-link join;
+- version history;
 - challenge rules/deadlines;
 - registration;
 - submission/update;
@@ -108,11 +125,21 @@ The result repository calculates the D2 MVP provisional ranking from the average
 - create/edit challenge;
 - deadline and team-size configuration;
 - rubric editor;
+- challenge search and registered-teams list;
+- needs-reassignment alert after a conflict;
 - judge assignment/reassignment;
 - start judging;
 - provisional ranking;
 - publish results;
 - audit log.
+
+### `admin-view.ts`
+- account list, role changes, password resets;
+- failed upload log;
+- backup list and **Back up now**.
+
+### `login-view.ts`
+- sign in and participant sign-up.
 
 ### `judge-view.ts`
 - assignment identity;
@@ -133,7 +160,7 @@ Repositories hide SQL details:
 - `userRepository.mjs`
 
 ## 10. Tests
-`backend/tests/services.test.mjs` contains 12 requirement-based tests. They test business rules rather than only HTML rendering.
+`backend/tests/services.test.mjs` contains 26 requirement-based tests, and `backend/tests/frontend-escaping.test.mjs` tests the browser escaping helpers. They test business rules rather than only HTML rendering.
 
 ## 11. Generated frontend files
 `npm run build` compiles TypeScript from `frontend/src/` into `frontend/public/`.

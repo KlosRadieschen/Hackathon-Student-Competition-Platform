@@ -20,6 +20,20 @@ export async function api(path, options = {}) {
         throw new Error(body?.message || `Request failed (${res.status})`);
     return body;
 }
+// Escape user-supplied text before inserting it into HTML templates.
+export function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// Allow only absolute http(s) links in href attributes; anything else (e.g. javascript:) becomes '#'.
+export function safeUrl(value) {
+    try {
+        const url = new URL(String(value ?? ''));
+        return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '#';
+    }
+    catch {
+        return '#';
+    }
+}
 export async function fileToBase64(file) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = '';

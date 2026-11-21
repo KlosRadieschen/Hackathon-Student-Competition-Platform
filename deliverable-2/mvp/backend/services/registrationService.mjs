@@ -1,5 +1,5 @@
 // UC2 business rules for challenge registration eligibility.
-export function createRegistrationService(challenges, teams, registrations, audit) {
+export function createRegistrationService(challenges, teams, registrations, audit, submissions) {
   return {
     register(userId, challengeId) {
       const challenge = challenges.findById(challengeId);
@@ -21,13 +21,22 @@ export function createRegistrationService(challenges, teams, registrations, audi
           { status: 409, code: sameChallenge ? 'ALREADY_REGISTERED' : 'TEAM_ALREADY_REGISTERED' }
         );
       }
+      // UC2 step 3: the challenge must not be full (the waitlist from extension 3b is Release 1).
+      if (challenge.max_teams != null && challenges.registrationCount(challengeId) >= challenge.max_teams) {
+        throw Object.assign(new Error(`This challenge is full (${challenge.max_teams} teams)`), { status: 409, code: 'CHALLENGE_FULL' });
+      }
       const registrationId = registrations.create(team.id, challengeId, new Date().toISOString());
       audit.add(userId, 'TEAM_REGISTERED', 'registration', registrationId, { teamId: team.id, challengeId });
       return { registrationId, status: 'registered' };
     },
     listMine(userId) {
       const team = teams.findForUser(userId);
-      return team ? registrations.listForTeam(team.id) : [];
+      if (!team) return [];
+      // Include earlier submission versions so the team can see its history.
+      return registrations.listForTeam(team.id).map((registration) => ({
+        ...registration,
+        previousVersions: registration.submissionId ? submissions.listVersions(registration.submissionId) : []
+      }));
     }
   };
 }

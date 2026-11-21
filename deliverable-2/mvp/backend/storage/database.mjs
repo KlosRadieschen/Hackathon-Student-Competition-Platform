@@ -18,6 +18,9 @@ export function openDatabase(dbPath = DB_PATH) {
   const db = new DatabaseSync(dbPath);
   // Enforce foreign-key constraints so invalid cross-table references are rejected.
   db.exec('PRAGMA foreign_keys = ON;');
+  // NFR2: write-ahead logging cuts the per-commit disk wait to roughly a third under deadline load.
+  // synchronous=FULL keeps every committed submission on disk even after a power cut (NFR3 receipts).
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;');
 
   // Create every table needed by the D2 MVP.
   db.exec(`
@@ -37,6 +40,7 @@ export function openDatabase(dbPath = DB_PATH) {
       rules TEXT NOT NULL DEFAULT '',
       min_team_size INTEGER NOT NULL,
       max_team_size INTEGER NOT NULL,
+      max_teams INTEGER,
       registration_deadline TEXT NOT NULL,
       submission_deadline TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'open',
@@ -75,7 +79,23 @@ export function openDatabase(dbPath = DB_PATH) {
       artifact_path TEXT,
       artifact_mime TEXT,
       submitted_at TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'submitted'
+      status TEXT NOT NULL DEFAULT 'submitted',
+      version INTEGER NOT NULL DEFAULT 1
+    );
+
+    -- UC1 extension 4a: every replaced submission is kept here as history.
+    CREATE TABLE IF NOT EXISTS submission_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      submission_id INTEGER NOT NULL REFERENCES submissions(id),
+      version INTEGER NOT NULL,
+      repository_link TEXT,
+      description TEXT NOT NULL DEFAULT '',
+      artifact_name TEXT,
+      artifact_path TEXT,
+      artifact_mime TEXT,
+      submitted_at TEXT NOT NULL,
+      replaced_at TEXT NOT NULL,
+      UNIQUE(submission_id, version)
     );
 
     CREATE TABLE IF NOT EXISTS judge_assignments (
@@ -155,6 +175,15 @@ export function openDatabase(dbPath = DB_PATH) {
   }
   if (!challengeColumns.some((column) => column.name === 'published_at')) {
     db.exec('ALTER TABLE challenges ADD COLUMN published_at TEXT;');
+  }
+  if (!challengeColumns.some((column) => column.name === 'max_teams')) {
+    db.exec('ALTER TABLE challenges ADD COLUMN max_teams INTEGER;');
+  }
+
+  // Support older local databases created before submission version history existed.
+  const submissionColumns = db.prepare('PRAGMA table_info(submissions)').all();
+  if (!submissionColumns.some((column) => column.name === 'version')) {
+    db.exec('ALTER TABLE submissions ADD COLUMN version INTEGER NOT NULL DEFAULT 1;');
   }
 
   // Return the open database to repositories and services.

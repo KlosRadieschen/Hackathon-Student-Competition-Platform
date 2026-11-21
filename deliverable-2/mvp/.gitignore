@@ -1,5 +1,9 @@
 node_modules/
 data/*.db
+data/*.db-wal
+data/*.db-shm
 uploads/*
 !uploads/.gitkeep
 .DS_Store
+backups/
+.mobile-check-profile-*/
