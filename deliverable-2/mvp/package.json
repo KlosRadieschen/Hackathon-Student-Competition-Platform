@@ -1,0 +1,18 @@
+{
+  "name": "hackathon-platform-d2-mvp",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.frontend.json",
+    "start": "node --no-warnings backend/server.mjs",
+    "test": "node --no-warnings --test backend/tests/*.test.mjs",
+    "reset": "rm -f data/hackathon.db data/hackathon.db-wal data/hackathon.db-shm && rm -rf uploads/*",
+    "dev": "npm run build && npm start",
+    "load-test": "node --no-warnings scripts/load-test.mjs",
+    "mobile-check": "node --no-warnings scripts/mobile-check.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

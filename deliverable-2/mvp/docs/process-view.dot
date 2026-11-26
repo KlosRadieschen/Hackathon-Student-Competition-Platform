@@ -1,0 +1,37 @@
+digraph G {
+  rankdir=LR;
+  graph [bgcolor="white", pad="0.2", nodesep="0.45", ranksep="0.6"];
+  node [shape=box, style="rounded", fontname="Arial", fontsize=11, margin="0.12,0.08"];
+  edge [fontname="Arial", fontsize=9];
+
+  Judge [label="Judge"];
+  UI [label="Judge UI"];
+  Controller [label="Evaluation Controller"];
+  Service [label="Evaluation Service"];
+  Repo [label="Evaluation Repository"];
+  DB [label="SQLite", shape=cylinder];
+
+  Judge -> UI [label="select assigned team"];
+  UI -> Controller [label="GET assignments"];
+  Controller -> Service [label="listAssignments()"];
+  Service -> Repo [label="identity only"];
+  Repo -> DB [label="query"];
+
+  Judge -> UI [label="declare conflict\nOR no conflict"];
+  UI -> Controller [label="POST conflict / no-conflict"];
+  Controller -> Service [label="declareConflict() /\nconfirmNoConflict()"];
+  Service -> Repo [label="save decision"];
+  Repo -> DB [label="update + audit"];
+
+  Judge -> UI [label="open project + rubric\nafter clearance"];
+  UI -> Controller [label="GET evaluation-data"];
+  Controller -> Service [label="loadData()"];
+  Service -> Repo [label="verify clearance +\nload rubric"];
+  Repo -> DB [label="query"];
+
+  Judge -> UI [label="submit criterion scores\n+ feedback"];
+  UI -> Controller [label="POST evaluation"];
+  Controller -> Service [label="submitEvaluation()"];
+  Service -> Repo [label="validate + store"];
+  Repo -> DB [label="transaction"];
+}
